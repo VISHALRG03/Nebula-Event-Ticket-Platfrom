@@ -178,7 +178,7 @@ const UserPage = ({ logout }) => {
             className="px-5 py-2 rounded-lg font-medium text-white"
             style={{
               background:
-                "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
+                "linear-gradient(90deg, #ffd000 0%, #ff7a00 50%, #ff0057 100%)",
             }}
           >
             My Bookings
@@ -330,7 +330,9 @@ const UserPage = ({ logout }) => {
 
         {/* Footer */}
         <footer className="bg-black text-white w-full p-4 m-0 leading-none text-center">
-          <p className="m-0">© 2026 EventHub. All rights reserved.</p>
+          <p className="m-0">© 2026 Nebula. All rights reserved.</p>
+          <br />
+          <p className="m-0">Nebula - Discover Your Next Experience</p>
         </footer>
       </div>
     </div>

@@ -257,8 +257,12 @@ export default function MyBookings() {
                   Enjoy the event! 🎉
                 </p>
                 <div className="bg-white bg-opacity-20 rounded p-2 mt-3 text-sm">
-                  <p className="text-black">Event: {scanNotification.eventName}</p>
-                  <p className="text-black font-semi-bold">Time: {scanNotification.time}</p>
+                  <p className="text-black">
+                    Event: {scanNotification.eventName}
+                  </p>
+                  <p className="text-black font-semi-bold">
+                    Time: {scanNotification.time}
+                  </p>
                   {scanNotification.scannedCount && (
                     <p className="mt-1 text-black">
                       ✅ {scanNotification.scannedCount}/
@@ -281,7 +285,7 @@ export default function MyBookings() {
           </div>
           <button
             onClick={() => navigate("/user")}
-            className="text-white h-10 px-4 mr-9 rounded hover:bg-red-700 transition"
+            className="text-white h-10 px-4 mr-9 rounded hover:bg-red-700 transition font-medium"
             style={{
               background: "#ff0057",
             }}
@@ -464,7 +468,9 @@ export default function MyBookings() {
           }}
         />
         <footer className="bg-black text-white w-full py-4 text-center border-t border-gray-800">
-          <p className="m-0">© 2026 EventHub. All rights reserved.</p>
+          <p className="m-0">© 2026 Nebula. All rights reserved.</p>
+          <br />
+          <p className="m-0">Nebula - Discover Your Next Experience</p>
         </footer>
       </div>
 
