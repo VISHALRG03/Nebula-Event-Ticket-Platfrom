@@ -57,7 +57,7 @@ export default function AuthPage({ setUser }) {
         </h2>
 
         {error && (
-          <p className="bg-red-500 text-white p-3 rounded mb-4 text-center">
+          <p className="bg-red-600 text-white p-3 rounded mb-4 text-center">
             {error}
           </p>
         )}
@@ -71,12 +71,12 @@ export default function AuthPage({ setUser }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full p-3 rounded bg-gray-600 text-white placeholder-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-100 mt-4"
+                className="w-full p-3 rounded bg-gray-100 text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100 mt-4"
               />
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full p-3 rounded bg-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-gray-100"
+                className="w-full p-3 rounded bg-gray-100 text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100"
               >
                 <option value="USER">USER</option>
                 <option value="ADMIN">ADMIN</option>
@@ -87,11 +87,11 @@ export default function AuthPage({ setUser }) {
 
           <input
             type="email"
-            placeholder="Enter your email"
+            placeholder="Enter your Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full p-3 rounded bg-gray-600 text-white placeholder-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-100"
+            className="w-full p-3 rounded bg-white text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100"
           />
           <input
             type="password"
@@ -99,7 +99,7 @@ export default function AuthPage({ setUser }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full p-3 rounded bg-gray-600 text-white placeholder-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-100"
+            className="w-full p-3 rounded bg-white text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100"
           />
 
           <button
