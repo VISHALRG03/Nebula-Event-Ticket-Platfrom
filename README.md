@@ -1,8 +1,6 @@
-#  Nebula - Event Ticket Management Platform
+# 🎫 Nebula - Event Ticket Management Platform
 
 <div align="center">
-  
-  ![Nebula Logo](https://via.placeholder.com/200x100/ff0057/ffffff?text=Nebula+🎫)
   
   **A full-stack event management platform with QR code ticket validation, real-time scanning, and role-based access control.**
   
@@ -20,13 +18,7 @@
 - [✨ Features](#-features)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [📋 Prerequisites](#-prerequisites)
-- [🚀 Installation](#-installation)
-- [📁 Project Structure](#-project-structure)
-- [🔌 API Endpoints](#-api-endpoints)
-- [🎯 Usage Guide](#-usage-guide)
-- [🤝 Contributing](#-contributing)
-- [📝 License](#-license)
-- [📧 Contact](#-contact)
+- [🚀 Quick Start](#-quick-start)
 
 ---
 
@@ -45,7 +37,7 @@
 - 👥 View all users and their roles
 - 📊 Monitor all bookings across the platform
 - ✅ Track ticket checkers and their activity
-- 🗑️ Delete events when needed
+- 🗑️ Delete events (with booking validation)
 
 ### ✅ **For Ticket Checkers**
 - 📷 Scan QR tickets at venue entrance using camera
@@ -62,11 +54,11 @@
 - 🛡️ Protected API endpoints
 
 ### 🎨 **User Experience**
-- 📱 Responsive design for mobile and desktop
+- 📱 Fully responsive design for mobile and desktop
 - 🌈 Beautiful gradient themes (pink, orange, yellow)
 - ✨ Smooth animations and transitions
 - 🔄 Real-time polling for ticket status
-- ❌ Error handling with user-friendly messages
+- ❌ User-friendly error messages
 
 ---
 
@@ -105,219 +97,90 @@ Before you begin, ensure you have installed:
 - **PostgreSQL** (15 or higher) - [Download](https://www.postgresql.org/download/)
 - **Maven** (3.9 or higher) - [Download](https://maven.apache.org/download.cgi)
 - **Git** - [Download](https://git-scm.com/downloads)
-- **IDE** (VS Code, IntelliJ IDEA, or Eclipse)
 
 ---
 
-## 🚀 **Installation**
+## 🚀 **Quick Start**
 
 ### **1. Clone the repository**
 ```bash
 git clone https://github.com/VISHALRG03/Nebula-Event-Ticket-Platfrom.git
 cd Nebula-Event-Ticket-Platfrom
-```
 
-### **2. Database Setup (PostgreSQL)**
 
-Open pgAdmin or psql and create a database:
+--------------------------------------------------------------------------
+# 2. Database Setup
+# Open PostgreSQL
+psql -U postgres
 
-```sql
+# Create database
 CREATE DATABASE eventdb;
-```
 
-### **3. Backend Configuration**
+# Exit PostgreSQL
+\q
 
-Edit `backend/src/main/resources/application.properties`:
+--------------------------------------------------------------------------
 
-```properties
+# 3. Backend Setup
+
+Configure application.properties
+Edit backend/src/main/resources/application.properties:
+
 # Database Configuration
 spring.datasource.url=jdbc:postgresql://localhost:5432/eventdb
 spring.datasource.username=postgres
 spring.datasource.password=your_password
 
 # JWT Configuration
-jwt.secret-key=your_secret_key_here_min_32_chars_long
+jwt.secret-key=9Fh7Kp2LxQw8MZ5aR3eT1YVJmC0N4B6SxR8JH2UQmP7YdC
 jwt.token-expiration=86400000
 
 # File Upload
 file.upload-dir=uploads/events/
 spring.servlet.multipart.max-file-size=5MB
 spring.servlet.multipart.max-request-size=5MB
-```
+spring.servlet.multipart.file-size-threshold=2KB
 
-### **4. Run the Backend**
+# JPA Settings
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+----------------------------------------------------------------------------------
 
-```bash
+Run Backend
 cd backend
 
-# On Windows
+# On Windows:
 ./mvnw spring-boot:run
 
-# On Linux/Mac
+# On Linux/Mac:
 ./mvnw spring-boot:run
-```
+Backend will start at http://localhost:8080
 
-The backend will start at `http://localhost:8080`
+-----------------------------------------------------------------------------------
+# 4. Frontend Setup
 
-### **5. Frontend Setup**
-
-Install all frontend dependencies:
-
-```bash
+In VsCode,  Install Dependencies
 cd frontend
 npm install
-```
 
-This installs:
-- `react`, `react-router-dom` - Core libraries
-- `axios` - API calls
-- `html5-qrcode` - QR scanning
-- `qrcode.react` - QR generation
-- `tailwindcss` - Styling
 
-### **6. Configure Frontend API URL**
-
-Create `.env` file in `frontend` folder:
-
-```env
+Configure Environment
+Create frontend/.env:
+env
 VITE_API_URL=http://localhost:8080/api
-```
 
-### **7. Start the Frontend**
 
-```bash
+Run Frontend in terminal
 npm run dev
-```
+Frontend will start at http://localhost:5173
 
-The frontend will start at `http://localhost:5173`
+--------------------------------------------------------------------------------
+# 5. Access the Application
+Frontend: http://localhost:5173
 
-### **8. Access the Application**
+Backend API: http://localhost:8080/api
 
-- **Frontend**: http://localhost:5173
-- **Backend**: http://localhost:8080
-- **Database**: PostgreSQL on port 5432
 
----
 
-## 📁 **Project Structure**
-
-```
-Nebula-Event-Ticket-Platfrom/
-├── frontend/                 # React application
-│   ├── src/
-│   │   ├── pages/            # All page components
-│   │   ├── api.js             # API calls
-│   │   └── App.jsx            # Main app with routing
-│   └── public/                # Static assets
-│
-└── backend/                   # Spring Boot application
-    ├── src/
-    │   ├── main/
-    │   │   ├── java/          # Java source files
-    │   │   └── resources/      # Configuration files
-    │   └── test/               # Unit tests
-    └── pom.xml                 # Maven dependencies
-```
-
----
-
-## 🔌 **API Endpoints**
-
-### Public Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | User login |
-| GET | `/api/events` | Get all events |
-| GET | `/api/events/page/{page}` | Get paginated events |
-
-### User Endpoints (USER role)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/booking` | Book tickets |
-| GET | `/api/booking/mybookings` | Get user's bookings |
-| DELETE | `/api/booking/{bookingId}` | Cancel booking |
-| POST | `/api/qr/generate/{bookingId}` | Generate QR codes |
-
-### Admin Endpoints (ADMIN role)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/admin/events` | Create event |
-| DELETE | `/api/admin/events/{id}` | Delete event |
-| GET | `/api/admin/bookings` | View all bookings |
-| GET | `/api/admin/registerusers` | View all users |
-
-### Ticket Checker Endpoints (TICKET_CHECKER role)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/scan/validate` | Validate QR code |
-| GET | `/api/scan/status/{bookingId}` | Get ticket status |
-
----
-
-## 🎯 **Usage Guide**
-
-### **User Flow**
-1. **Register/Login** to the platform
-2. **Browse events** on the home page
-3. **Click "Get Passes"** on any event
-4. **Select number of tickets** and book
-5. **Go to "My Bookings"** to view your bookings
-6. **Click "Generate QR"** to create tickets
-7. **Show QR code** at venue entrance
-
-### **Admin Flow**
-1. **Login with ADMIN credentials**
-2. **Create new events** with images
-3. **View all events** in the system
-4. **Monitor all bookings** and users
-
-### **Ticket Checker Flow**
-1. **Login with TICKET_CHECKER credentials**
-2. **Click "START SCANNING"** to activate camera
-3. **Scan attendee's QR code**
-4. **See instant validation** (success/error)
-
----
-
-## 🧪 **Testing Credentials**
-
-| Role | Email | Password |
-|------|-------|----------|
-| **USER** | `user@example.com` | `password123` |
-| **ADMIN** | `admin@example.com` | `admin123` |
-| **TICKET_CHECKER** | `checker@example.com` | `checker123` |
-
----
-
-## 🤝 **Contributing**
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📝 **License**
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 📧 **Contact**
-
-**VISHALRG03**
-- GitHub: [@VISHALRG03](https://github.com/VISHALRG03)
-- Project Link: [https://github.com/VISHALRG03/Nebula-Event-Ticket-Platfrom](https://github.com/VISHALRG03/Nebula-Event-Ticket-Platfrom)
-
----
-
-<div align="center">
-  
-**Made with ❤️ for event lovers everywhere**
-
-[⬆ Back to Top](#-nebula---event-ticket-management-platform)
-
-</div>
+Note for Checkerpage  open in differnt browser to scan 
