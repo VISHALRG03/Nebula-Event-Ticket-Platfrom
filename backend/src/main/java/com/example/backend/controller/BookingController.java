@@ -2,8 +2,6 @@ package com.example.backend.controller;
 
 import com.example.backend.dto.BookingRequest;
 import com.example.backend.entity.Bookings;
-import com.example.backend.entity.Tickets;
-import com.example.backend.repository.TicketRepository;
 import com.example.backend.service.BookingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -15,39 +13,27 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/booking")
-@CrossOrigin(origins = "http://localhost:5173")
+@PreAuthorize("hasRole('USER')")
 public class BookingController {
 
     @Autowired
-    BookingService bookingService;
-    @Autowired TicketRepository ticketRepository;
+    private BookingService bookingService;
 
-    @PreAuthorize("hasRole('USER')")
     @PostMapping
-    public ResponseEntity<?> bookEvent(
-            @RequestBody BookingRequest bookingRequest,
-            @RequestAttribute Long userId) { // ✅ Get userId from JWT token
-
-        String msg = bookingService.bookEvent(
-                userId,
-                bookingRequest.getEventId(),
-                bookingRequest.getTotalTickets()
-        );
-
-        System.out.println("UserID from JWT: " + userId);
-
-        return ResponseEntity.ok(msg);
+    public ResponseEntity<Map<String, String>> bookEvent(
+            @RequestBody BookingRequest request,
+            @RequestAttribute Long userId) {
+        String message = bookingService.bookEvent(userId, request.getEventId(), request.getTotalTickets());
+        return ResponseEntity.ok(Map.of("message", message));
     }
 
-    @PreAuthorize("hasRole('USER')")
     @GetMapping("/mybookings")
-    public List<Bookings> getMyBookings(@RequestAttribute Long userId) {
-        return bookingService.getBookingsByUser(userId);
+    public ResponseEntity<List<Bookings>> getMyBookings(@RequestAttribute Long userId) {
+        return ResponseEntity.ok(bookingService.getBookingsByUser(userId));
     }
 
-    @PreAuthorize("hasRole('USER')")
     @DeleteMapping("/{bookingId}")
-    public ResponseEntity<?> deleteBooking(
+    public ResponseEntity<Map<String, String>> deleteBooking(
             @PathVariable Long bookingId,
             @RequestAttribute Long userId) {
         bookingService.deleteBooking(bookingId, userId);
@@ -55,9 +41,7 @@ public class BookingController {
     }
 
     @GetMapping("/booking/{id}/tickets")
-    public List<Tickets> getTickets(@PathVariable Long id) {
-        return ticketRepository.findByBookingId(id);
+    public ResponseEntity<List<String>> getTicketQRCodes(@PathVariable Long id) {
+        return ResponseEntity.ok(bookingService.getTicketQRCodes(id));
     }
-
-
 }

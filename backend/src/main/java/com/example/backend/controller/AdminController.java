@@ -1,53 +1,40 @@
 package com.example.backend.controller;
 
 import com.example.backend.entity.Bookings;
-import com.example.backend.entity.Role;
 import com.example.backend.entity.User;
-import com.example.backend.repository.BookingRepository;
-import com.example.backend.repository.UserRepository;
+import com.example.backend.service.AdminService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
     @Autowired
-    private BookingRepository bookingRepository;
+    private AdminService adminService;
 
-    @Autowired
-    private UserRepository userRepository;
-
-    // ADMIN see all Bookings
-    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/bookings")
-    public List<Bookings> getAllBookings() {
-        return bookingRepository.findAll();
+    public ResponseEntity<List<Bookings>> getAllBookings() {
+        return ResponseEntity.ok(adminService.getAllBookings());
     }
 
-    // See All Registered Users
-    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/registerusers")
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
+    public ResponseEntity<List<User>> getAllUsers() {
+        return ResponseEntity.ok(adminService.getAllUsers());
     }
 
-    // See All Users By ROLE USER
-    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/user")
-    public List<User> getAllUsersByRole() {
-        return userRepository.findByRole(Role.USER);
+    public ResponseEntity<List<User>> getRegularUsers() {
+        return ResponseEntity.ok(adminService.getUsersByRole("USER"));
     }
 
-    // See All Ticket Checkers
-    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/ticket-checkers")
-    public List<User> getAllTicketCheckers() {
-        return userRepository.findByRole(Role.TICKET_CHECKER);
+    public ResponseEntity<List<User>> getTicketCheckers() {
+        return ResponseEntity.ok(adminService.getUsersByRole("TICKET_CHECKER"));
     }
 }

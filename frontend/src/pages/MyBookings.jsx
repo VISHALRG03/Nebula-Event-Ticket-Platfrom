@@ -1,494 +1,487 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "react"; // Removed useCallback
 import {
   fetchUserBookings,
   deleteBooking,
-  generateQr,
-  fetchTickets,
+  generateQrForBooking,
+  fetchTicketsByBooking,
   checkTicketStatus,
+  handleApiError,
 } from "../api";
 import { useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 
+// Sort bookings: active first, completed last
+const sortBookings = (bookings) => {
+  return [...bookings].sort((a, b) => {
+    const aUsed = a.ticketsUsed || 0;
+    const bUsed = b.ticketsUsed || 0;
+    const aCompleted = aUsed === a.totalTickets;
+    const bCompleted = bUsed === b.totalTickets;
+
+    if (aCompleted && !bCompleted) return 1;
+    if (!aCompleted && bCompleted) return -1;
+    return new Date(b.event.date) - new Date(a.event.date);
+  });
+};
+
 export default function MyBookings() {
-  const [bookings, setBookings] = useState([]);
-  const [qrData, setQrData] = useState(null);
-  const [selectedBookingId, setSelectedBookingId] = useState(null);
-  const [expandedBookingId, setExpandedBookingId] = useState(null);
-  const [scanNotification, setScanNotification] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notificationShown, setNotificationShown] = useState(false);
-  const [allScanned, setAllScanned] = useState(false);
-  const [errorMessage, setErrorMessage] = useState({
-    text: "",
-    type: "",
+  const [state, setState] = useState({
+    bookings: [],
+    loading: true,
+    message: { text: "", type: "", bookingId: null },
+  });
+
+  const [qrState, setQrState] = useState({
+    data: null,
     bookingId: null,
-  }); // New state for error messages
+    expandedId: null,
+  });
+
+  const [scanNotification, setScanNotification] = useState(null);
+  const [pollingActive, setPollingActive] = useState(false);
+
   const navigate = useNavigate();
 
   // Load bookings on mount
   useEffect(() => {
-    let isMounted = true;
-
-    const loadBookings = async () => {
-      try {
-        const res = await fetchUserBookings();
-        if (isMounted) {
-          setBookings(res.data);
-        }
-      } catch (error) {
-        console.error("Error loading bookings:", error);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     loadBookings();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
-  // POLLING EFFECT
+  // Polling effect
   useEffect(() => {
-    if (!qrData || !selectedBookingId || allScanned) return;
+    if (!pollingActive || !qrState.bookingId) return;
 
-    let intervalId;
-    let notificationTimeout;
-
-    const checkStatus = async () => {
+    let intervalId = setInterval(async () => {
       try {
-        const res = await checkTicketStatus(selectedBookingId);
-        console.log("Status check response:", res.data);
+        const response = await checkTicketStatus(qrState.bookingId);
 
-        if (res.data.anyTicketScanned && !notificationShown) {
-          console.log("🎯 Setting notification with data:", {
-            eventName: res.data.eventName,
-            scannedCount: res.data.scannedTickets,
-            totalTickets: res.data.totalTickets,
-          });
-
+        if (response.data.anyTicketScanned) {
           setScanNotification({
             show: true,
-            eventName: res.data.eventName,
-            scannedCount: res.data.scannedTickets,
-            totalTickets: res.data.totalTickets,
+            eventName: response.data.eventName,
+            scannedCount: response.data.scannedTickets,
+            totalTickets: response.data.totalTickets,
             time: new Date().toLocaleTimeString(),
           });
 
-          setNotificationShown(true);
+          // Auto-hide after 5 seconds
+          setTimeout(() => setScanNotification(null), 5000);
 
-          notificationTimeout = setTimeout(() => {
-            setScanNotification(null);
-          }, 5000);
+          // Refresh bookings
+          loadBookings();
 
-          refreshBookings();
-
-          if (res.data.scannedTickets === res.data.totalTickets) {
-            console.log("✅ All tickets scanned");
-            setAllScanned(true);
+          // Stop polling if all tickets scanned
+          if (response.data.scannedTickets === response.data.totalTickets) {
+            setPollingActive(false);
           }
         }
       } catch (error) {
-        console.error("Error checking ticket status:", error);
+        console.error("Polling error:", error);
       }
-    };
+    }, 3000);
 
-    intervalId = setInterval(checkStatus, 3000);
+    return () => clearInterval(intervalId);
+  }, [pollingActive, qrState.bookingId]);
 
-    return () => {
-      clearInterval(intervalId);
-      if (notificationTimeout) clearTimeout(notificationTimeout);
-    };
-  }, [qrData, selectedBookingId, notificationShown, allScanned]);
-
-  const refreshBookings = async () => {
+  const loadBookings = async () => {
     try {
-      const res = await fetchUserBookings();
-      setBookings(res.data);
+      const response = await fetchUserBookings();
+      const bookings = Array.isArray(response.data) ? response.data : [];
+      setState((prev) => ({
+        ...prev,
+        bookings: sortBookings(bookings),
+        loading: false,
+      }));
     } catch (error) {
-      console.error("Error refreshing bookings:", error);
+      setState((prev) => ({
+        ...prev,
+        bookings: [],
+        loading: false,
+        message: {
+          text: handleApiError(error),
+          type: "error",
+          bookingId: null,
+        },
+      }));
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (bookingId) => {
+    if (!window.confirm("Cancel this booking?")) return;
+
     try {
-      await deleteBooking(id);
-      setErrorMessage({
-        text: "Booking cancelled successfully",
-        type: "success",
-        bookingId: id,
-      });
+      await deleteBooking(bookingId);
+      setState((prev) => ({
+        ...prev,
+        bookings: prev.bookings.filter((b) => b.id !== bookingId),
+        message: {
+          text: "Booking cancelled successfully",
+          type: "success",
+          bookingId,
+        },
+      }));
       setTimeout(
-        () => setErrorMessage({ text: "", type: "", bookingId: null }),
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
         3000,
       );
-      refreshBookings();
-    } catch {
-      setErrorMessage({
-        text: "Failed to cancel booking",
-        type: "error",
-        bookingId: id,
-      });
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        message: { text: handleApiError(error), type: "error", bookingId },
+      }));
       setTimeout(
-        () => setErrorMessage({ text: "", type: "", bookingId: null }),
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
         3000,
       );
     }
   };
 
-  const handleGenerateQr = async (id) => {
+  const handleGenerateQr = async (bookingId) => {
     try {
-      const res = await generateQr(id);
-      setQrData(res.data.qrCodes);
-      setSelectedBookingId(id);
-      setExpandedBookingId(id);
-      setNotificationShown(false);
-      setAllScanned(false);
-      setErrorMessage({
-        text: "QR Codes generated successfully!",
-        type: "success",
-        bookingId: id,
+      const response = await generateQrForBooking(bookingId);
+      setQrState({
+        data: response.data.qrCodes,
+        bookingId,
+        expandedId: bookingId,
       });
+      setPollingActive(true);
+      setState((prev) => ({
+        ...prev,
+        message: { text: "QR Codes generated!", type: "success", bookingId },
+      }));
       setTimeout(
-        () => setErrorMessage({ text: "", type: "", bookingId: null }),
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
         3000,
       );
-      refreshBookings();
-    } catch (err) {
-      // Show error message on screen instead of alert
-      const errorMsg = err.response?.data?.message || "Failed to generate QR";
-      setErrorMessage({
-        text: errorMsg,
-        type: "error",
-        bookingId: id,
-      });
-
-      // Auto hide after 4 seconds
+      loadBookings(); // Refresh to update qrGenerated status
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        message: { text: handleApiError(error), type: "error", bookingId },
+      }));
       setTimeout(
-        () => setErrorMessage({ text: "", type: "", bookingId: null }),
-        4000,
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
+        3000,
       );
     }
   };
 
-  const handleViewQr = async (id) => {
+  const handleViewQr = async (bookingId) => {
     try {
-      const res = await fetchTickets(id);
-      setQrData(res.data.map((ticket) => ticket.qrCode));
-      setSelectedBookingId(id);
-      setExpandedBookingId(id);
-      setNotificationShown(false);
-      setAllScanned(false);
-      setErrorMessage({
-        text: "QR Codes loaded successfully!",
-        type: "success",
-        bookingId: id,
+      const response = await fetchTicketsByBooking(bookingId);
+      setQrState({
+        data: response.data.map((ticket) => ticket.qrCode),
+        bookingId,
+        expandedId: bookingId,
       });
+      setPollingActive(true);
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        message: { text: handleApiError(error), type: "error", bookingId },
+      }));
       setTimeout(
-        () => setErrorMessage({ text: "", type: "", bookingId: null }),
-        3000,
-      );
-    } catch {
-      setErrorMessage({
-        text: "Failed to load tickets",
-        type: "error",
-        bookingId: id,
-      });
-      setTimeout(
-        () => setErrorMessage({ text: "", type: "", bookingId: null }),
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
         3000,
       );
     }
   };
 
-  const handleCloseQr = (bookingId) => {
-    if (expandedBookingId === bookingId) {
-      setExpandedBookingId(null);
-      setQrData(null);
-      setSelectedBookingId(null);
+  const handleCloseQr = () => {
+    setQrState({ data: null, bookingId: null, expandedId: null });
+    setPollingActive(false);
+  };
+
+  const handleRemoveCompleted = async (bookingId) => {
+    if (!window.confirm("Remove this completed booking from your list?"))
+      return;
+
+    try {
+      await deleteBooking(bookingId);
+      setState((prev) => ({
+        ...prev,
+        bookings: prev.bookings.filter((b) => b.id !== bookingId),
+        message: { text: "Booking removed", type: "success", bookingId },
+      }));
+      setTimeout(
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
+        3000,
+      );
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        message: { text: handleApiError(error), type: "error", bookingId },
+      }));
+      setTimeout(
+        () =>
+          setState((prev) => ({
+            ...prev,
+            message: { text: "", type: "", bookingId: null },
+          })),
+        3000,
+      );
     }
   };
 
-  const handleCloseNotification = () => {
-    setScanNotification(null);
-    setNotificationShown(false);
-  };
-
-  const handleCloseError = () => {
-    setErrorMessage({ text: "", type: "", bookingId: null });
-  };
-
-  if (loading) {
+  if (state.loading) {
     return (
-      <div className="p-8 text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading your bookings...</p>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-yellow-500 border-t-transparent mx-auto"></div>
+          <p className="text-white mt-4">Loading your bookings...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-black">
+    <div className="min-h-screen bg-black flex flex-col">
       {/* Scan Notification */}
       {scanNotification?.show && (
-        <div className="fixed top-4 right-4 z-[9999] animate-slide-in">
-          <div className=" bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-lg shadow-2xl border-l-8 border-green-800 max-w-md">
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <span className="text-3xl">🎟️</span>
-              </div>
-              <div className="ml-4 flex-1">
-                <div className="flex justify-between items-start">
-                  <h3 className="text-lg font-bold">Ticket Scanned!</h3>
-                  <button
-                    onClick={handleCloseNotification}
-                    className="text-white hover:text-green-200 text-xl"
-                  >
-                    ✕
-                  </button>
-                </div>
+        <div className="fixed top-4 right-4 z-50 animate-slide-in">
+          <div className="bg-gradient-to-r from-green-500 to-green-600 text-black p-6 rounded-lg shadow-2xl border-l-8 border-green-800 max-w-md">
+            <div className="flex items-start">
+              <span className="text-3xl mr-4">🎟️</span>
+              <div className="flex-1">
+                <h3 className="font-bold text-lg">Ticket Scanned!</h3>
                 <p className="text-green-100 mt-1">
-                  Your ticket has been successfully scanned!
+                  Your ticket has been scanned!
                 </p>
-                <p className="text-green-100 font-semibold mt-2">
-                  Enjoy the event! 🎉
-                </p>
-                <div className="bg-white bg-opacity-20 rounded p-2 mt-3 text-sm">
-                  <p className="text-black">
-                    Event: {scanNotification.eventName}
+                <div className="bg-white bg-opacity-20 rounded p-3 mt-3">
+                  <p>Event: {scanNotification.eventName}</p>
+                  <p className="mt-1">
+                    ✅ {scanNotification.scannedCount}/
+                    {scanNotification.totalTickets} tickets used
                   </p>
-                  <p className="text-black font-semi-bold">
-                    Time: {scanNotification.time}
-                  </p>
-                  {scanNotification.scannedCount && (
-                    <p className="mt-1 text-black">
-                      ✅ {scanNotification.scannedCount}/
-                      {scanNotification.totalTickets} tickets scanned
-                    </p>
-                  )}
+                  <p className="text-sm mt-1">Time: {scanNotification.time}</p>
                 </div>
               </div>
+              <button
+                onClick={() => setScanNotification(null)}
+                className="ml-4 text-white hover:text-gray-200"
+              >
+                ✕
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Main Content Container */}
-      <div className="flex-grow">
-        {/* Navigation */}
-        <div className="flex justify-between items-center bg-black w-full p-3 rounded">
-          <div>
-            <h2 className="text-2xl font-bold text-white pl-16">My Bookings</h2>
-          </div>
+      {/* Navigation */}
+      <nav className="bg-black text-white p-4">
+        <div className="container mx-auto flex justify-between items-center">
+          <h2 className="text-2xl font-bold">My Bookings</h2>
           <button
             onClick={() => navigate("/user")}
-            className="text-white h-10 px-4 mr-9 rounded hover:bg-red-700 transition font-medium"
-            style={{
-              background: "#ff0057",
-            }}
+            className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 transition"
           >
             Home
           </button>
         </div>
+      </nav>
 
-        <div
-          className="w-full h-6"
-          style={{
-            background:
-              "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-          }}
-        ></div>
+      <div className="h-3 bg-gradient-to-r from-red-700 via-orange-600 to-yellow-500"></div>
 
-        <div>
-          <p className="text-gray-400 text-sm mt-1 pl-16">
-            {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}{" "}
-            found
-          </p>
-        </div>
+      {/* Stats */}
+      <div className="container mx-auto px-4 py-4">
+        <p className="text-gray-400">
+          {state.bookings.length}{" "}
+          {state.bookings.length === 1 ? "booking" : "bookings"} found
+        </p>
+      </div>
 
-        {/* Bookings Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 bg-black p-4 w-200 mx-auto mt-6">
-          {bookings.map((b) => {
-            const usedTickets = b.ticketsUsed || 0;
-            const allTicketsUsed = usedTickets === b.totalTickets;
-            const isExpanded = expandedBookingId === b.id;
-            const showQr = isExpanded && qrData && selectedBookingId === b.id;
-            const showError =
-              errorMessage.bookingId === b.id && errorMessage.text;
+      {/* Bookings Grid */}
+      <div className="container mx-auto px-4 py-6 flex-grow">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {state.bookings.map((booking) => {
+            const usedTickets = booking.ticketsUsed || 0;
+            const totalTickets = booking.totalTickets;
+            const allTicketsUsed = usedTickets === totalTickets;
+            const isExpanded = qrState.expandedId === booking.id;
+            const showQr =
+              isExpanded && qrState.data && qrState.bookingId === booking.id;
+            const showMessage =
+              state.message.bookingId === booking.id && state.message.text;
 
             return (
               <div
-                key={b.id}
-                className={`bg-black-500 p-4 rounded shadow hover:shadow-md transition border ${
+                key={booking.id}
+                className={`bg-gray-800 rounded-lg p-6 shadow-lg transition ${
                   allTicketsUsed ? "opacity-75" : ""
-                } ${isExpanded ? "col-span-1 row-span-2" : ""}`}
+                } ${isExpanded ? "md:col-span-2 lg:col-span-1" : ""}`}
               >
-                {/* Error/Success Message inside the card */}
-                {showError && (
+                {/* Message */}
+                {showMessage && (
                   <div
-                    className={`mb-3 p-2 rounded-lg text-sm flex justify-between items-center ${
-                      errorMessage.type === "success"
+                    className={`mb-4 p-3 rounded-lg text-sm ${
+                      state.message.type === "success"
                         ? "bg-green-600 text-white"
                         : "bg-red-600 text-white"
                     }`}
                   >
-                    <span>{errorMessage.text}</span>
-                    <button
-                      onClick={handleCloseError}
-                      className="text-white hover:text-gray-200 text-lg font-bold ml-2"
-                    >
-                      ×
-                    </button>
+                    {state.message.text}
                   </div>
                 )}
 
-                <div className="flex justify-between items-start">
-                  <h3 className="font-bold text-lg text-white">
-                    {b.event.name}
+                {/* Booking Header */}
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-white font-bold text-lg">
+                    {booking.event?.name || "Event"}
                   </h3>
                   {usedTickets > 0 && (
                     <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                      {usedTickets}/{b.totalTickets} Used
+                      {usedTickets}/{totalTickets} Used
                     </span>
                   )}
                 </div>
-                <p className="text-gray-500">Tickets: {b.totalTickets}</p>
-                <p className="text-gray-500">
-                  Date: {new Date(b.event.date).toLocaleDateString()}
-                </p>
 
-                {usedTickets > 0 && (
-                  <div className="mt-2">
-                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                      <div
-                        className="bg-green-600 h-1.5 rounded-full"
-                        style={{
-                          width: `${(usedTickets / b.totalTickets) * 100}%`,
-                        }}
-                      ></div>
+                {/* Booking Details */}
+                <div className="space-y-2 text-gray-300 mb-4">
+                  <p>Tickets: {totalTickets}</p>
+                  <p>
+                    Date: {new Date(booking.event?.date).toLocaleDateString()}
+                  </p>
+                  {usedTickets > 0 && (
+                    <div className="mt-2">
+                      <div className="w-full bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-green-500 h-2 rounded-full"
+                          style={{
+                            width: `${(usedTickets / totalTickets) * 100}%`,
+                          }}
+                        ></div>
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2 mt-3">
-                  {!b.qrGenerated && (
-                    <button
-                      onClick={() => handleDelete(b.id)}
-                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition"
-                    >
-                      Cancel Booking
-                    </button>
-                  )}
-
-                  {b.qrGenerated ? (
-                    <button
-                      onClick={() => handleViewQr(b.id)}
-                      disabled={allTicketsUsed}
-                      className={`px-3 py-1 rounded transition ${
-                        allTicketsUsed
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-blue-600 text-white hover:bg-blue-700"
-                      }`}
-                    >
-                      {allTicketsUsed
-                        ? "All Tickets Used"
-                        : isExpanded
-                          ? "Hide QR"
-                          : "View QR"}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleGenerateQr(b.id)}
-                      className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition"
-                    >
-                      Generate QR Tickets
-                    </button>
-                  )}
-
-                  {isExpanded && (
-                    <button
-                      onClick={() => handleCloseQr(b.id)}
-                      className="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 transition"
-                    >
-                      Close
-                    </button>
                   )}
                 </div>
 
-                {/* QR Code Section */}
-                {showQr && (
-                  <div className="mt-3 p-5 bg-gray-700 rounded-lg w-full">
-                    <div className="flex justify-between items-center mb-3 w-full">
-                      <h4 className="font-semibold text-white">Your Tickets</h4>
-                      <p className="text-xs text-white opacity-75">
-                        Show at venue entrance
-                      </p>
-                    </div>
+                {/* Action Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  {!booking.qrGenerated ? (
+                    <>
+                      <button
+                        onClick={() => handleDelete(booking.id)}
+                        className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleGenerateQr(booking.id)}
+                        className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition"
+                      >
+                        Generate QR
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() =>
+                          isExpanded
+                            ? handleCloseQr()
+                            : handleViewQr(booking.id)
+                        }
+                        disabled={allTicketsUsed}
+                        className={`px-3 py-1 rounded transition ${
+                          allTicketsUsed
+                            ? "bg-gray-600 cursor-not-allowed"
+                            : "bg-blue-600 text-white hover:bg-blue-700"
+                        }`}
+                      >
+                        {allTicketsUsed
+                          ? "All Used"
+                          : isExpanded
+                            ? "Hide QR"
+                            : "View QR"}
+                      </button>
 
-                    {Array.isArray(qrData) && (
-                      <div className="grid grid-cols-2 gap-3">
-                        {qrData.map((qrCode, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-white rounded-lg p-2 flex flex-col items-center py-4"
-                          >
-                            <QRCodeCanvas value={qrCode} size={145} />
-                            <p className="text-xs mt-4 font-medium">
-                              Ticket #{idx + 1}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                      {allTicketsUsed && (
+                        <button
+                          onClick={() => handleRemoveCompleted(booking.id)}
+                          className="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 transition"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
 
-                    <div className="mt-3 bg-blue-500 bg-opacity-30 p-2 rounded-lg">
-                      <p className="text-xs text-white flex items-center">
-                        <span className="text-sm mr-1">ℹ️</span>
-                        Scanner will auto-validate at venue
-                      </p>
+                {/* QR Codes */}
+                {showQr && Array.isArray(qrState.data) && (
+                  <div className="mt-6 p-4 bg-gray-800 rounded-lg">
+                    <h4 className="text-white font-semibold mb-3">
+                      Your Tickets
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      {qrState.data.map((qrCode, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-white rounded-lg p-3 flex flex-col items-center"
+                        >
+                          <QRCodeCanvas value={qrCode} size={120} />
+                          <p className="text-xs mt-2 font-medium">
+                            Ticket #{idx + 1}
+                          </p>
+                        </div>
+                      ))}
                     </div>
+                    <p className="text-xs text-gray-400 mt-3 text-center">
+                      Show QR codes at venue entrance
+                    </p>
                   </div>
                 )}
               </div>
             );
           })}
         </div>
+
+        {state.bookings.length === 0 && (
+          <div className="text-center py-16">
+            <p className="text-gray-400 text-xl">No bookings found</p>
+            <button
+              onClick={() => navigate("/user")}
+              className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+              Browse Events
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Footer Section */}
-      <div className="w-full mt-auto">
-        <div
-          className="w-full h-7"
-          style={{
-            background:
-              "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-          }}
-        />
-        <footer className="bg-black text-white w-full py-4 text-center border-t border-gray-800">
-          <p className="m-0">© 2026 Nebula. All rights reserved.</p>
-          <br />
-          <p className="m-0">Nebula - Discover Your Next Experience</p>
+      {/* Footer */}
+      <div className="mt-auto">
+        <div className="h-3 bg-gradient-to-r from-red-700 via-orange-600 to-yellow-500"></div>
+        <footer className="bg-black text-white py-6 text-center">
+          <p className="text-gray-400">© 2026 Nebula. All rights reserved.</p>
+          <p className="text-gray-500 text-sm mt-2">
+            Nebula - Discover Your Next Experience
+          </p>
         </footer>
       </div>
-
-      <style jsx>{`
-        @keyframes slideIn {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        .animate-slide-in {
-          animation: slideIn 0.3s ease-out;
-        }
-      `}</style>
     </div>
   );
 }

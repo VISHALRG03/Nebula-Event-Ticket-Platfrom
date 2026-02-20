@@ -1,116 +1,96 @@
 import axios from "axios";
 
+// Use environment variables with fallback for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
 const API = axios.create({
-    baseURL: "http://localhost:8080/api",
+    baseURL: API_BASE_URL,
+    timeout: 10000, // 10 second timeout
 });
 
-// const API = axios.create({
-//     baseURL: "http://192.168.1.10:8080/api", // localhost nahi, PC ka IP
-// });
-
-// Add token to request
+// Request interceptor for auth token
 API.interceptors.request.use((config) => {
-    const userStr = localStorage.getItem("user");
-    if (userStr) {
-        try {
-            const user = JSON.parse(userStr);
-
-            // Check different possible token locations
-            const token = user?.token || user?.user?.token || user?.jwt || user?.accessToken;
-
-            if (token) {
-                config.headers.Authorization = `Bearer ${token}`;
-                console.log("✅ Token added to request");
-            } else {
-                console.warn("❌ No token found in user object:", user);
-            }
-        } catch (e) {
-            console.error("Error parsing user from localStorage:", e);
-        }
-    } else {
-        console.warn("❌ No user found in localStorage");
+    // Skip for public endpoints
+    if (config.url.includes('/auth/')) {
+        return config;
     }
+
+    try {
+        const userStr = localStorage.getItem("user");
+        if (!userStr) return config;
+
+        const user = JSON.parse(userStr);
+        const token = user?.token || user?.user?.token || user?.jwt;
+
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+    } catch {
+        // Silently fail - don't log in production
+    }
+
     return config;
 });
 
-// ===================   AUTH APIs   ===============================
+// Response interceptor for error handling
+API.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        // Handle 401 Unauthorized - redirect to login
+        if (error.response?.status === 401) {
+            localStorage.removeItem("user");
+            window.location.href = "/";
+        }
+        return Promise.reject(error);
+    }
+);
+
+// =================== AUTH APIS ===================
 export const login = (data) => API.post("/auth/login", data);
 export const register = (data) => API.post("/auth/register", data);
 
-// ===================   EVENTS APIs   ===============================
+// =================== EVENTS APIS ===================
 export const fetchEvents = () => API.get("/events");
+export const fetchPaginatedEvents = (page) => API.get(`/events/page/${page}`);
 export const fetchEventById = (id) => API.get(`/events/${id}`);
+export const createEvent = (formData) => API.post("/admin/events", formData);
+export const deleteEvent = (id) => API.delete(`/admin/events/${id}`);
 
-// ===================   BOOKINGS APIs   ===============================
+// =================== BOOKINGS APIS ===================
 export const bookEvent = (eventId, totalTickets) =>
-    API.post("/booking", {
-        eventId,
-        totalTickets,
-    });
+    API.post("/booking", { eventId, totalTickets });
 
-export const fetchUserBookings = () =>
-    API.get("/booking/mybookings");
+export const fetchUserBookings = () => API.get("/booking/mybookings");
+export const deleteBooking = (bookingId) => API.delete(`/booking/${bookingId}`);
+export const fetchTicketsByBooking = (bookingId) =>
+    API.get(`/booking/booking/${bookingId}/tickets`);
 
-export const deleteBooking = (bookingId) =>
-    API.delete(`/booking/${bookingId}`);
-
-export const fetchTickets = (id) =>
-    API.get(`/booking/booking/${id}/tickets`);  // Fixed URL to match your controller
-
-// ===================   QR APIs   ===============================
-export const generateQr = (bookingId) =>
+// =================== QR APIS ===================
+export const generateQrForBooking = (bookingId) =>
     API.post(`/qr/generate/${bookingId}`);
 
-// ===================   TICKET SCAN APIs   ===============================
-// For CHECKER role - Validate ticket and mark as used
+// =================== SCAN APIS ===================
 export const validateTicket = (qrCode) =>
     API.post("/scan/validate", { qrCode });
 
-// ✅ NEW: For USER role - Check if ticket has been scanned (polling)
-// export const checkTicketStatus = (bookingId) =>
-//     API.get(`/scan/status/${bookingId}`);
+export const checkTicketStatus = (bookingId) =>
+    API.get(`/scan/public/status/${bookingId}`);
 
-// ✅ NEW: Get single ticket details
-export const getTicketDetails = (ticketId) =>
-    API.get(`/tickets/${ticketId}`);
-
-export const checkTicketStatus = (id) => API.get(`/scan/public/status/${id}`);
-
-// ===================   ADMIN APIs   ===============================
+// =================== ADMIN APIS ===================
 export const fetchAllBookings = () => API.get("/admin/bookings");
 export const fetchAllUsers = () => API.get("/admin/registerusers");
-export const fetchAllUsersByRole = (role) => API.get(`/admin/${role}`);
+export const fetchUsersByRole = (role) => API.get(`/admin/${role}`);
 export const fetchTicketCheckers = () => API.get("/admin/ticket-checkers");
 
-// ===================   ERROR HANDLER HELPER   ===============================
+// =================== ERROR HANDLER ===================
 export const handleApiError = (error) => {
     if (error.response) {
-        // Server responded with error status
         return error.response.data?.message || "Server error occurred";
     } else if (error.request) {
-        // Request made but no response
-        return "No response from server. Please check if backend is running.";
+        return "Unable to connect to server. Please check your internet connection.";
     } else {
-        // Something else happened
-        return error.message || "An error occurred";
+        return error.message || "An unexpected error occurred";
     }
 };
-
-
-// ===================   TEST APIs   ===============================
-// ✅ TEMPORARY: Test TICKET_CHECKER role
-export const testTicketCheckerRole = async () => {
-    try {
-        const response = await API.get("/test/check-role");
-        console.log("✅ Role test successful:", response.data);
-        return response.data;
-    } catch (error) {
-        console.error("❌ Role test failed:", error.response?.status, error.response?.data);
-        throw error;
-    }
-};
-
-
-
 
 export default API;

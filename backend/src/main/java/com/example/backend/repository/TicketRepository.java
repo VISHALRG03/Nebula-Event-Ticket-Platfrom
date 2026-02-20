@@ -14,7 +14,8 @@ public interface TicketRepository extends JpaRepository<Tickets, Long> {
 
     Optional<Tickets> findByQrCode(String qrCode);
 
-    boolean existsByBookingId(Long bookingId);
+    @Query("SELECT COUNT(t) > 0 FROM Tickets t WHERE t.booking.id = :bookingId")
+    boolean existsByBookingId(@Param("bookingId") Long bookingId);
 
     @Query("SELECT COUNT(t) FROM Tickets t WHERE t.booking.id = :bookingId AND t.checkedIn = true")
     long countScannedTicketsByBookingId(@Param("bookingId") Long bookingId);

@@ -1,8 +1,11 @@
 package com.example.backend.entity;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.*;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 @Entity
 public class Events {
@@ -17,6 +20,9 @@ public class Events {
     private String time;
     private String imageUrl;
 
+    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore  // Prevents infinite recursion when serializing
+    private List<Bookings> bookings = new ArrayList<>();
 
     //GETTERS
 
@@ -27,8 +33,8 @@ public class Events {
     public String getDate() {  return date;  }
     public String getTime() {  return time;  }
     public String getImageUrl() {  return imageUrl; }
-
-
+    public List<Bookings> getBookings() { return bookings; }
+    public void setBookings(List<Bookings> bookings) { this.bookings = bookings; }
 
     // SETTERS
 
@@ -53,6 +59,8 @@ public class Events {
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }
-
+    public boolean hasBookings() {
+        return bookings != null && !bookings.isEmpty();
+    }
 
 }

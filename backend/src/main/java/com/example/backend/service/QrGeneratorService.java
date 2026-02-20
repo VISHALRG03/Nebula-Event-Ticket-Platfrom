@@ -8,6 +8,7 @@ import com.example.backend.repository.TicketRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -23,35 +24,32 @@ public class QrGeneratorService {
     @Autowired
     private TicketRepository ticketRepository;
 
+    @Transactional
     public List<String> generateTicketsForBooking(Long bookingId) {
-
-        if(ticketRepository.existsByBookingId(bookingId)){
+        if (ticketRepository.existsByBookingId(bookingId)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Tickets QR Code already generated for this booking"
+                    "QR codes already generated for this booking"
             );
         }
 
         Bookings booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
-        Events event = booking.getEvent();
         String userName = booking.getUser().getName();
         int totalTickets = booking.getTotalTickets();
-
         List<String> qrCodes = new ArrayList<>();
 
         for (int i = 1; i <= totalTickets; i++) {
             Tickets ticket = new Tickets();
             ticket.setBooking(booking);
-            ticket.setEvent(event);
+            ticket.setEvent(booking.getEvent());
             ticket.setTicketNumber(i);
 
-            // ✅ FIXED: Generate JSON format instead of plain text
             String qrContent = String.format(
-                    "{\"bookingId\":%d,\"eventId\":%d,\"ticketNo\":%d,\"owner\":\"%s\",\"ticketId\":\"%s\"}",
+                    "%d|%d|%d|%s|%s",
                     booking.getId(),
-                    event.getId(),
+                    booking.getEvent().getId(),
                     i,
                     userName,
                     UUID.randomUUID().toString()
@@ -61,6 +59,9 @@ public class QrGeneratorService {
             ticketRepository.save(ticket);
             qrCodes.add(qrContent);
         }
+
+        booking.setQrGenerated(true);
+        bookingRepository.save(booking);
 
         return qrCodes;
     }

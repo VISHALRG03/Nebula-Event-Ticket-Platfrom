@@ -1,120 +1,185 @@
 import { useState } from "react";
-import { login, register } from "../api";
+import { login, register, handleApiError } from "../api";
 import { useNavigate } from "react-router-dom";
 
-// receive setUser from App
 export default function AuthPage({ setUser }) {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("USER");
-  const [error, setError] = useState("");
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "USER",
+  });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
   const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setLoading(true);
+    setMessage({ type: "", text: "" });
+
     try {
       if (isLogin) {
-        const res = await login({ email, password });
+        const response = await login({
+          email: formData.email,
+          password: formData.password,
+        });
 
-        // Save to localStorage
-        localStorage.setItem("user", JSON.stringify(res.data));
+        // Extract user data and token
+        const userData = response.data.user || response.data;
+        const token =
+          response.data.token || response.data.jwt || response.data.accessToken;
 
-        // Update App state dynamically
-        setUser(res.data);
+        if (!token) {
+          throw new Error("Authentication failed - no token received");
+        }
+
+        const userToStore = {
+          ...userData,
+          token,
+          role: userData.role,
+        };
+
+        localStorage.setItem("user", JSON.stringify(userToStore));
+        setUser(userToStore);
 
         // Redirect based on role
-        const userRole = res.data.user.role;
-        if (userRole === "ADMIN") navigate("/admin");
-        else if (userRole === "TICKET_CHECKER") navigate("/ticket-checker");
-        else navigate("/user");
+        const redirectPath =
+          {
+            ADMIN: "/admin",
+            TICKET_CHECKER: "/ticket-checker",
+            USER: "/user",
+          }[userData.role] || "/user";
+
+        navigate(redirectPath);
       } else {
-        await register({ name, email, password, role });
-        setIsLogin(true); // switch to login after registration
+        await register({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: formData.role,
+        });
+
+        setMessage({
+          type: "success",
+          text: "Registration successful! Please login.",
+        });
+        setIsLogin(true);
+        setFormData({ ...formData, password: "" });
       }
-    } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: handleApiError(error),
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
+  const toggleMode = () => {
+    setIsLogin(!isLogin);
+    setMessage({ type: "", text: "" });
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      role: "USER",
+    });
+  };
+
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background:
-          "linear-gradient(180deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-      }}
-    >
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-red-700 via-orange-600 to-yellow-500">
       <div className="bg-black text-white p-8 rounded-xl shadow-2xl w-full max-w-md">
-        {/* <h2 className="text-3xl font-bold mb-2 text-center text-white">
-          Welcome to Event Tickets
-        </h2> */}
-
-        <h2 className="text-2xl font-bold mb-6 text-center">
-          {isLogin ? "Login" : "Register"}
+        <h2 className="text-3xl font-bold mb-6 text-center">
+          {isLogin ? "Welcome Back !" : "Create Account"}
         </h2>
+        <p className="text-gray-400 text-center mb-8">
+          {isLogin ? "Login to access your account" : "Sign up to get started"}
+        </p>
 
-        {error && (
-          <p className="bg-red-600 text-white p-3 rounded mb-4 text-center">
-            {error}
-          </p>
+        {message.text && (
+          <div
+            className={`p-4 rounded-lg mb-6 text-center ${
+              message.type === "success" ? "bg-green-600" : "bg-red-600"
+            }`}
+          >
+            {message.text}
+          </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 bg-black">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <>
               <input
                 type="text"
-                placeholder="Enter your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                name="name"
+                placeholder="Full Name"
+                value={formData.name}
+                onChange={handleChange}
                 required
-                className="w-full p-3 rounded bg-gray-100 text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100 mt-4"
+                className="w-full p-3 rounded-lg bg-white text-black placeholder-gray-600 focus:ring-2 focus:ring-gray-200 focus:outline-none"
               />
               <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="w-full p-3 rounded bg-gray-100 text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100"
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                className="w-full p-3 rounded-lg bg-white text-black focus:ring-2 focus:ring-gray-200 focus:outline-none"
               >
-                <option value="USER">USER</option>
-                <option value="ADMIN">ADMIN</option>
-                <option value="TICKET_CHECKER">TICKET_CHECKER</option>
+                <option value="USER">User</option>
+                <option value="ADMIN">Admin</option>
+                <option value="TICKET_CHECKER">Ticket Checker</option>
               </select>
             </>
           )}
 
           <input
             type="email"
-            placeholder="Enter your Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            name="email"
+            placeholder="Email Address"
+            value={formData.email}
+            onChange={handleChange}
             required
-            className="w-full p-3 rounded bg-white text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100"
+            className="w-full p-3 rounded-lg bg-white text-black placeholder-gray-600 focus:ring-2 focus:ring-gray-200 focus:outline-none"
           />
+
           <input
             type="password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            name="password"
+            placeholder="Password"
+            value={formData.password}
+            onChange={handleChange}
             required
-            className="w-full p-3 rounded bg-white text-black placeholder-black focus:outline-none focus:ring-2 focus:ring-gray-100"
+            minLength={6}
+            className="w-full p-3 rounded-lg bg-white text-black placeholder-gray-600 focus:ring-2 focus:ring-gray-200 focus:outline-none"
           />
 
           <button
             type="submit"
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded transition duration-200"
+            disabled={loading}
+            className={`w-full py-3 rounded-lg font-bold text-lg transition ${
+              loading
+                ? "bg-gray-600 cursor-not-allowed"
+                : "bg-green-600 hover:bg-green-700"
+            }`}
           >
-            {isLogin ? "Login" : "Register"}
+            {loading ? "Please wait..." : isLogin ? "Login" : "Register"}
           </button>
         </form>
 
         <p className="mt-6 text-center text-gray-400">
           {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
           <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-white hover:text-blue-500 font-semibold bg-transparent border-none cursor-pointer"
+            onClick={toggleMode}
+            className="text-yellow-400 hover:text-yellow-400 font-semibold bg-transparent border-none"
           >
             {isLogin ? "Sign Up" : "Login"}
           </button>

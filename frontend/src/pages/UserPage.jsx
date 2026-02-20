@@ -1,342 +1,308 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { useState, useEffect } from "react";
+import { fetchPaginatedEvents } from "../api";
 import { useNavigate } from "react-router-dom";
 import "./UserPage.css";
 
-const UserPage = ({ logout }) => {
-  const [events, setEvents] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [hasNext, setHasNext] = useState(false);
-  const [hasPrevious, setHasPrevious] = useState(false);
+// Constants
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080";
+const DEFAULT_IMAGE = `${BACKEND_URL}/uploads/events/default-event.jpg`;
 
-  // ✅ Track failed images to prevent loop
-  const [failedImages, setFailedImages] = useState(new Set());
+// Get username directly from localStorage (synchronous)
+const getInitialUserName = () => {
+  try {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      return user?.name || "User";
+    }
+  } catch {
+    // Silently fail
+  }
+  return "User";
+};
+
+export default function UserPage({ logout }) {
+  const [state, setState] = useState({
+    events: [],
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    loading: true,
+    hasNext: false,
+    hasPrevious: false,
+    failedImages: new Set(),
+  });
+
+  // Initialize userName directly - NO useEffect needed!
+  const [userName] = useState(getInitialUserName);
 
   const navigate = useNavigate();
-  const API_BASE_URL = "http://localhost:8080/api";
-  const BACKEND_URL = "http://localhost:8080";
 
+  // Load events when page changes
   useEffect(() => {
-    loadEvents(currentPage);
-  }, [currentPage]);
+    let isMounted = true;
 
-  const loadEvents = async (page) => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${API_BASE_URL}/events/page/${page}`);
-      console.log("Events loaded:", response.data);
-      setEvents(response.data.events || []);
-      setTotalPages(response.data.totalPages || 1);
-      setTotalItems(response.data.totalItems || 0);
-      setHasNext(response.data.hasNext || false);
-      setHasPrevious(response.data.hasPrevious || false);
+    const loadEvents = async () => {
+      setState((prev) => ({ ...prev, loading: true }));
 
-      // Reset failed images when new events load
-      setFailedImages(new Set());
-    } catch (error) {
-      console.error("Error loading events:", error);
-      if (page === 1) {
-        try {
-          const fallbackResponse = await axios.get(`${API_BASE_URL}/events`);
-          setEvents(fallbackResponse.data);
-          setTotalItems(fallbackResponse.data.length);
-          setTotalPages(1);
-          setHasNext(false);
-          setHasPrevious(false);
-        } catch (fallbackError) {
-          console.error("Fallback also failed:", fallbackError);
-          alert("Failed to load events. Please try again.");
+      try {
+        const response = await fetchPaginatedEvents(state.currentPage);
+        if (isMounted) {
+          setState((prev) => ({
+            ...prev,
+            events: response.data.events || [],
+            totalPages: response.data.totalPages || 1,
+            totalItems: response.data.totalItems || 0,
+            hasNext: response.data.hasNext || false,
+            hasPrevious: response.data.hasPrevious || false,
+            loading: false,
+            failedImages: new Set(),
+          }));
         }
-      } else {
-        setCurrentPage(1);
+      } catch {
+        if (isMounted) {
+          setState((prev) => ({ ...prev, events: [], loading: false }));
+        }
       }
-    } finally {
-      setLoading(false);
+    };
+
+    loadEvents();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [state.currentPage]);
+
+  const getImageUrl = (event) => {
+    if (state.failedImages.has(event.id)) return DEFAULT_IMAGE;
+    if (!event.imageUrl) return DEFAULT_IMAGE;
+
+    try {
+      if (event.imageUrl.startsWith("http")) return event.imageUrl;
+      if (event.imageUrl.startsWith("/")) {
+        return `${BACKEND_URL}${event.imageUrl}`;
+      }
+      return `${BACKEND_URL}/uploads/events/${event.imageUrl}`;
+    } catch {
+      return DEFAULT_IMAGE;
     }
   };
 
-  const goToPage = (page) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
+  const handleImageError = (eventId) => {
+    setState((prev) => ({
+      ...prev,
+      failedImages: new Set([...prev.failedImages, eventId]),
+    }));
+  };
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= state.totalPages) {
+      setState((prev) => ({ ...prev, currentPage: newPage }));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
-  const goToNextPage = () => {
-    if (hasNext) {
-      goToPage(currentPage + 1);
-    }
-  };
+  const handleBookNow = (eventId) => navigate(`/book/${eventId}`);
+  const handleMyBookings = () => navigate("/my-bookings");
 
-  const goToPreviousPage = () => {
-    if (hasPrevious) {
-      goToPage(currentPage - 1);
-    }
-  };
-
-  const handleBookNow = (eventId) => {
-    navigate(`/book/${eventId}`);
-  };
-
-  const goToMyBookings = () => {
-    navigate("/my-bookings");
-  };
-
-  // ✅ FIXED: Get image URL with fallback
-  const getImageUrl = (event) => {
-    // If this image already failed, return default immediately
-    if (failedImages.has(event.id)) {
-      return "/images/default-event.jpg";
-    }
-
-    if (!event.imageUrl) {
-      return "/images/default-event.jpg";
-    }
-
-    // If URL is already full (http)
-    if (event.imageUrl.startsWith("http")) {
-      return event.imageUrl;
-    }
-
-    // Construct backend URL
-    const cleanImageUrl = event.imageUrl.startsWith("/")
-      ? event.imageUrl
-      : "/" + event.imageUrl;
-    return `${BACKEND_URL}${cleanImageUrl}`;
-  };
-
-  // ✅ Handle image error
-  const handleImageError = (eventId) => {
-    console.log("Image failed for event:", eventId);
-    // Mark this image as failed
-    setFailedImages((prev) => new Set([...prev, eventId]));
-  };
-
-  // Generate page numbers with ellipsis
   const getPageNumbers = () => {
     const delta = 2;
     const range = [];
-    const rangeWithDots = [];
-    let l;
 
-    for (let i = 1; i <= totalPages; i++) {
+    for (let i = 1; i <= state.totalPages; i++) {
       if (
         i === 1 ||
-        i === totalPages ||
-        (i >= currentPage - delta && i <= currentPage + delta)
+        i === state.totalPages ||
+        (i >= state.currentPage - delta && i <= state.currentPage + delta)
       ) {
         range.push(i);
       }
     }
 
-    range.forEach((i) => {
-      if (l) {
-        if (i - l === 2) {
-          rangeWithDots.push(l + 1);
-        } else if (i - l !== 1) {
-          rangeWithDots.push("...");
-        }
+    return range.reduce((acc, curr, idx, arr) => {
+      if (idx > 0 && curr - arr[idx - 1] > 1) {
+        acc.push("...");
       }
-      rangeWithDots.push(i);
-      l = i;
-    });
-
-    return rangeWithDots;
+      acc.push(curr);
+      return acc;
+    }, []);
   };
+
+  if (state.loading && state.events.length === 0) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-yellow-500 border-t-transparent mx-auto"></div>
+          <p className="text-white mt-4">Loading amazing events...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black">
-      {/* Navigation - Updated with Contact Us button */}
-      <nav className="bg-black text-white p-3 flex justify-between items-center">
-        {/* Left side - Logo with gradient background */}
-        <div
-          className="flex items-center px-1 py-1 rounded-lg"
-          style={{
-            background:
-              "linear-gradient(180deg, #ffd000 0%, #ff7a00 50%, #ff0057 100%)",
-          }}
-        >
-          <div className="bg-black bg-opacity-60 rounded-lg px-4 py-1">
-            <h1 className="text-2xl font-bold"> Nebula 🎫 </h1>
+      {/* Navigation */}
+      <nav className="bg-black text-white p-4">
+        <div className="container mx-auto flex justify-between items-center">
+          <div className="bg-gradient-to-b from-yellow-400 via-orange-500 to-pink-600 p-px rounded-lg">
+            <div className="bg-black bg-opacity-60 rounded-lg px-4 py-2">
+              <h1 className="text-2xl font-bold">Nebula 🎫</h1>
+            </div>
           </div>
-        </div>
 
-        {/* Center - Tagline */}
-        <div className="ml-1">
-          <h1 className="text-gray-300 text-sm sm:text-base">
-            Discover Your Next Experience
-          </h1>
-        </div>
+          <div className="hidden md:block">
+            <p className="text-gray-300">Welcome, {userName + " !"}</p>
+          </div>
 
-        {/* Right side - Buttons */}
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={goToMyBookings}
-            className="px-5 py-2 rounded-lg font-medium text-white"
-            style={{
-              background:
-                "linear-gradient(90deg, #ffd000 0%, #ff7a00 50%, #ff0057 100%)",
-            }}
-          >
-            My Bookings
-          </button>
-          <button
-            onClick={logout}
-            className="px-5 py-2 rounded-lg font-medium text-white"
-            style={{ background: "#ff0057" }}
-          >
-            Logout
-          </button>
+          <div className="flex space-x-4">
+            <button
+              onClick={handleMyBookings}
+              className="px-6 py-2 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 hover:opacity-90 transition"
+            >
+              My Bookings
+            </button>
+            <button
+              onClick={logout}
+              className="px-4 py-2 rounded-lg font-medium text-white bg-red-600 hover:bg-red-700 transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* Gradient Bar Below Navigation */}
-      <div
-        className="w-full h-1"
-        style={{
-          background:
-            "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-        }}
-      ></div>
-
-      <div
-        className=" w-full h-7"
-        style={{
-          background:
-            "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-        }}
-      ></div>
+      {/* Gradient Bar */}
+      <div className="h-3 bg-gradient-to-r from-red-700 via-orange-600 to-yellow-500"></div>
 
       {/* Main Content */}
-      <div className="user-content">
-        {loading && (
-          <div className="loading-container">
-            <div className="spinner"></div>
-            <p>Loading amazing events for you...</p>
+      <div className="container mx-auto px-4 py-8 ">
+        {state.events.length === 0 && !state.loading ? (
+          <div className="text-center py-16">
+            <p className="text-gray-400 text-xl">
+              No events available at the moment
+            </p>
           </div>
-        )}
-
-        {!loading && (
+        ) : (
           <>
-            {events.length > 0 ? (
-              <>
-                {/* Events Grid - 8 cards */}
-                <div className="events-grid">
-                  {events.map((event) => (
-                    <div key={event.id} className="event-card">
-                      {/* ✅ FIXED: Image with error handling */}
-                      <img
-                        src={getImageUrl(event)}
-                        alt={event.name}
-                        className="event-image"
-                        loading="lazy"
-                        onError={() => handleImageError(event.id)}
-                      />
-                      <div className="event-details">
-                        <h3 className="event-name">{event.name}</h3>
-                        <p className="event-artist">
-                          <span className="icon">🎤</span>{" "}
-                          {event.artist || "TBA"}
-                        </p>
-                        <p className="event-location">
-                          <span className="icon">📍</span> {event.location}
-                        </p>
-                        <div className="event-datetime">
-                          <span className="event-date">
-                            <span className="icon">📅</span> {event.date}
-                          </span>
-                          <span className="event-time">
-                            <span className="icon">⏰</span> {event.time}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleBookNow(event.id)}
-                          className="book-now-btn"
-                        >
-                          Get Passes
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Pagination Section */}
-                {(totalPages > 1 || hasPrevious || hasNext) && (
-                  <div className="pagination-section bg-black">
-                    <div className="page-info text-white display flex justify-center items-center mb-4 p-2">
-                      Page {currentPage} of {totalPages} • {totalItems} total
-                      events
-                    </div>
-
-                    <div className="pagination display flex justify-center space-x-2 items-center p-2 h-14">
-                      <button
-                        onClick={goToPreviousPage}
-                        disabled={!hasPrevious}
-                        className="pagination-btn prev"
-                      >
-                        ← Prev
-                      </button>
-
-                      <div className="page-numbers">
-                        {getPageNumbers().map((pageNum, index) =>
-                          pageNum === "..." ? (
-                            <span key={`dots-${index}`} className="page-dots">
-                              ...
-                            </span>
-                          ) : (
-                            <button
-                              key={pageNum}
-                              onClick={() => goToPage(pageNum)}
-                              className={`page-number ${currentPage === pageNum ? "active" : ""}`}
-                            >
-                              {pageNum}
-                            </button>
-                          ),
-                        )}
-                      </div>
-
-                      <button
-                        onClick={goToNextPage}
-                        disabled={!hasNext}
-                        className="pagination-btn next"
-                      >
-                        Next →
-                      </button>
-                    </div>
+            {/* Events Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {state.events.map((event) => (
+                <div
+                  key={event.id}
+                  className="bg-black rounded-lg overflow-hidden hover:transform hover:scale-105 transition duration-300 border-2 border-gray-600"
+                >
+                  <img
+                    src={getImageUrl(event)}
+                    alt={event.name}
+                    className="w-full h-48 object-cover"
+                    loading="lazy"
+                    onError={() => handleImageError(event.id)}
+                  />
+                  <div className="p-4">
+                    <h3 className="text-white font-bold text-lg mb-2 truncate">
+                      {event.name}
+                    </h3>
+                    <p className="text-gray-400 text-sm mb-1">
+                      <span className="mr-2">🎤</span> {event.artist || "TBA"}
+                    </p>
+                    <p className="text-gray-400 text-sm mb-1">
+                      <span className="mr-2">📍</span> {event.location}
+                    </p>
+                    <p className="text-gray-400 text-sm mb-3">
+                      <span className="mr-2">📅</span> {event.date} at{" "}
+                      {event.time}
+                    </p>
+                    <button
+                      onClick={() => handleBookNow(event.id)}
+                      className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white py-2 rounded-lg hover:from-green-700 hover:to-green-800 transition"
+                    >
+                      Get Tickets
+                    </button>
                   </div>
-                )}
-              </>
-            ) : (
-              <div className="no-events">
-                <p>No events found. Please check back later.</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {state.totalPages > 1 && (
+              <div className="mt-8">
+                <p className="text-center text-gray-400 mb-4">
+                  Page {state.currentPage} of {state.totalPages} •{" "}
+                  {state.totalItems} events
+                </p>
+
+                <div className="flex justify-center items-center space-x-2">
+                  <button
+                    onClick={() => handlePageChange(state.currentPage - 1)}
+                    disabled={!state.hasPrevious}
+                    className={`px-4 py-2 rounded-lg transition ${
+                      state.hasPrevious
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    ← Previous
+                  </button>
+
+                  {/* Desktop Page Numbers */}
+                  <div className="hidden md:flex space-x-2">
+                    {getPageNumbers().map((page, index) =>
+                      page === "..." ? (
+                        <span
+                          key={`dots-${index}`}
+                          className="px-3 py-2 text-gray-400"
+                        >
+                          ...
+                        </span>
+                      ) : (
+                        <button
+                          key={page}
+                          onClick={() => handlePageChange(page)}
+                          className={`w-10 h-10 rounded-lg transition ${
+                            state.currentPage === page
+                              ? "bg-yellow-500 text-white"
+                              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ),
+                    )}
+                  </div>
+
+                  {/* Mobile Page Indicator */}
+                  <span className="md:hidden text-white">
+                    {state.currentPage} / {state.totalPages}
+                  </span>
+
+                  <button
+                    onClick={() => handlePageChange(state.currentPage + 1)}
+                    disabled={!state.hasNext}
+                    className={`px-4 py-2 rounded-lg transition ${
+                      state.hasNext
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    Next →
+                  </button>
+                </div>
               </div>
             )}
           </>
         )}
       </div>
 
-      <div className="w-full">
-        {/* Gradient bar */}
-        <div
-          className="w-full h-7 block"
-          style={{
-            background:
-              "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-          }}
-        />
-
-        {/* Footer */}
-        <footer className="bg-black text-white w-full p-4 m-0 leading-none text-center">
-          <p className="m-0">© 2026 Nebula. All rights reserved.</p>
-          <br />
-          <p className="m-0">Nebula - Discover Your Next Experience</p>
+      {/* Footer */}
+      <div className="mt-12">
+        <div className="h-3 bg-gradient-to-r from-red-700 via-orange-600 to-yellow-500"></div>
+        <footer className="bg-black text-white py-6 text-center">
+          <p className="text-gray-400">© 2026 Nebula. All rights reserved.</p>
+          <p className="text-gray-500 text-sm mt-2">
+            Discover Your Next Experience
+          </p>
         </footer>
       </div>
     </div>
   );
-};
-
-export default UserPage;
+}

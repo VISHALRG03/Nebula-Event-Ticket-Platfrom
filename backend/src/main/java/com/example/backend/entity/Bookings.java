@@ -1,5 +1,6 @@
 package com.example.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.util.List;
@@ -20,10 +21,15 @@ public class Bookings {
     private  int totalTickets;
 
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnoreProperties("booking")
     private List<Tickets> tickets;
 
 
-    private boolean qrGenerated;
+    private boolean qrGenerated = false;
+
+    // Add transient field or calculate in service
+    @Transient
+    private Integer ticketsUsed;
 
 
     // GETTERS  &    SETTERS
@@ -57,7 +63,7 @@ public class Bookings {
     }
 
 
-    public void setQrGenerated(boolean b) {
+    public void setQrGenerated(boolean qrGenerated) {
         this.qrGenerated = qrGenerated;
     }
     public boolean isQrGenerated() {
@@ -66,4 +72,13 @@ public class Bookings {
 
     public List<Tickets> getTickets() { return tickets; }
     public void setTickets(List<Tickets> tickets) { this.tickets = tickets; }
+
+
+    @Transient
+    public Integer getTicketsUsed() {
+        if (tickets != null) {
+            return (int) tickets.stream().filter(Tickets::isCheckedIn).count();
+        }
+        return 0;
+    }
 }

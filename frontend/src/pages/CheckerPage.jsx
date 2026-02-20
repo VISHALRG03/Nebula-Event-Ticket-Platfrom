@@ -4,60 +4,27 @@ import { validateTicket } from "../api";
 import { useNavigate } from "react-router-dom";
 
 export default function CheckerPage() {
-  const [scanResult, setScanResult] = useState(null);
-  const [scanStatus, setScanStatus] = useState("idle");
+  const [scanState, setScanState] = useState({
+    status: "idle", // idle, scanning, validating, success, error
+    result: null,
+    message: "",
+  });
   const [stats, setStats] = useState({ today: 0, venue: "85%" });
   const [isScannerReady, setIsScannerReady] = useState(false);
-  const [isScanning, setIsScanning] = useState(false); // New state to track scanning
   const scannerRef = useRef(null);
   const readerId = "qr-reader";
   const navigate = useNavigate();
 
+  // Get user info
   const user = JSON.parse(localStorage.getItem("user"));
-  const checkerId = user?.user?.id || user?.id || 1;
-
-  // Logout function
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    navigate("/");
-  };
-
-  // Contact Us function
-  const handleContactUs = () => {
-    alert("Contact us at: support@eventhub.com");
-  };
-
-  // ✅ FIX: Simple beep sound without audio file
-  const playSuccessSound = () => {
-    try {
-      const audioContext = new (
-        window.AudioContext || window.webkitAudioContext
-      )();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.15);
-    } catch {
-      // Ignore audio errors silently
-    }
-  };
+  const checkerName = user?.name || "Checker";
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsScannerReady(true);
-    }, 100);
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(() => setIsScannerReady(true), 100);
     return () => clearTimeout(timer);
   }, []);
 
-  // Initialize scanner
   useEffect(() => {
     if (!isScannerReady) return;
 
@@ -68,28 +35,23 @@ export default function CheckerPage() {
         return;
       }
 
-      // Clear any existing scanner
+      // Clean up existing scanner
       if (scannerRef.current) {
-        try {
-          scannerRef.current.clear().catch(console.error);
-        } catch (e) {
-          console.log("Scanner clear error:", e);
-        }
+        scannerRef.current.clear().catch(() => {});
+        scannerRef.current = null;
       }
 
-      // Create new scanner
+      // Initialize new scanner
       scannerRef.current = new Html5QrcodeScanner(
         readerId,
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 }, // Slightly larger for better scanning
+          qrbox: { width: 200, height: 200 },
           rememberLastUsedCamera: true,
           showTorchButtonIfSupported: true,
-          showZoomSliderIfSupported: true,
-          defaultZoomValueIfSupported: 1,
           aspectRatio: 1.0,
         },
-        /* verbose= */ false,
+        false,
       );
     };
 
@@ -97,220 +59,177 @@ export default function CheckerPage() {
 
     return () => {
       if (scannerRef.current) {
-        try {
-          scannerRef.current.clear().catch(console.error);
-        } catch (e) {
-          console.log("Scanner clear error:", e);
-        }
+        scannerRef.current.clear().catch(() => {});
       }
     };
   }, [isScannerReady]);
 
-  const startScanner = () => {
+  const stopScanner = () => {
     if (scannerRef.current) {
-      setIsScanning(true);
-      setScanStatus("scanning");
-      setScanResult(null);
-
-      // Render the scanner with callbacks
-      scannerRef.current.render(
-        (decodedText) => {
-          // Success callback
-          handleScanSuccess(decodedText);
-        },
-        () => {
-          // Error callback - ignore most errors
-          // console.log("Scan error:", errorMessage);
-        },
-      );
-    } else {
-      setTimeout(startScanner, 200);
+      scannerRef.current.clear().catch(() => {});
+      setScanState((prev) => ({ ...prev, status: "idle" }));
     }
   };
 
-  const stopScanner = () => {
-    if (scannerRef.current) {
-      try {
-        scannerRef.current.clear().catch(console.error);
-        setIsScanning(false);
-        setScanStatus("idle");
-      } catch (e) {
-        console.log("Stop scanner error:", e);
-      }
-    }
+  const startScanner = () => {
+    if (!scannerRef.current) return;
+
+    setScanState({
+      status: "scanning",
+      result: null,
+      message: "",
+    });
+
+    scannerRef.current.render(
+      (decodedText) => handleScanSuccess(decodedText),
+      (error) => {
+        // Silent fail - only log in development
+        if (import.meta.env.DEV) {
+          console.log("Scan error:", error);
+        }
+      },
+    );
   };
 
   const handleScanSuccess = async (decodedText) => {
     try {
-      // Stop scanner immediately
       stopScanner();
-
-      setScanStatus("validating");
+      setScanState((prev) => ({ ...prev, status: "validating" }));
 
       const response = await validateTicket(decodedText);
-      console.log("Validation response:", response.data);
 
       if (response.data.status === "success") {
-        setScanResult(response.data);
-        setScanStatus("success");
-        playSuccessSound();
+        setScanState({
+          status: "success",
+          result: response.data,
+          message: response.data.message || "✅ Valid Ticket!",
+        });
         setStats((prev) => ({ ...prev, today: prev.today + 1 }));
       } else {
-        setScanResult(response.data);
-        setScanStatus("error");
-
-        // Auto restart after 3 seconds
-        setTimeout(() => {
-          startScanner();
-        }, 3000);
+        setScanState({
+          status: "error",
+          result: response.data,
+          message: response.data.message || "❌ Invalid Ticket!",
+        });
+        // Auto restart scanner after 3 seconds
+        setTimeout(() => startScanner(), 3000);
       }
     } catch (error) {
-      console.error("Validation error:", error);
-      setScanStatus("error");
-      setScanResult({
+      setScanState({
         status: "error",
-        message:
-          error.response?.data?.message || "❌ Invalid or expired ticket!",
+        result: null,
+        message: error.response?.data?.message || "❌ Validation failed!",
       });
-
-      setTimeout(() => {
-        startScanner();
-      }, 3000);
+      setTimeout(() => startScanner(), 3000);
     }
   };
 
-  const handleScanAgain = () => {
-    startScanner();
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    navigate("/");
   };
 
   const getMessageText = (msg) => {
     if (typeof msg === "string") return msg;
-    if (msg && typeof msg === "object" && msg.message) return msg.message;
-    return "Invalid Ticket!";
-  };
-
-  const isAlreadyUsed = (msg) => {
-    const text = getMessageText(msg);
-    return text.toLowerCase().includes("already used");
+    return msg?.message || "Unknown error";
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-black">
+    <div className="min-h-screen bg-black flex flex-col">
       {/* Navigation */}
-      <nav className="bg-black text-white p-4 flex justify-between items-center">
-        <div
-          className="flex items-center px-1 py-1 rounded-lg"
-          style={{
-            background:
-              "linear-gradient(180deg, #ffd000 0%, #ff7a00 50%, #ff0057 100%)",
-          }}
-        >
-          <div className="bg-black bg-opacity-60 rounded-lg px-4 py-1">
-            <h1 className="text-2xl font-bold"> Nebula 🎫 </h1>
+      <nav className="bg-black text-white p-4">
+        <div className="container mx-auto flex justify-between items-center">
+          <div className="bg-gradient-to-b from-yellow-400 via-orange-500 to-pink-600 p-px rounded-lg">
+            <div className="bg-black bg-opacity-60 rounded-lg px-4 py-2">
+              <h1 className="text-2xl font-bold">Nebula 🎫</h1>
+            </div>
           </div>
-        </div>
 
-        <div className="nav-right flex items-center space-x-4">
-          <button
-            onClick={handleContactUs}
-            className="px-6 py-2 rounded-lg font-medium text-white transition transform hover:scale-105"
-            style={{
-              background:
-                "linear-gradient(90deg, #ffd000 0%, #ff7a00 50%, #ff0057 100%)",
-            }}
-          >
-            Contact Us
-          </button>
+          <div className="hidden md:block">
+            <p className="text-gray-300">Welcome, {checkerName + " !"}</p>
+          </div>
 
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 rounded-lg font-medium text-white transition duration-200"
-            style={{ background: "#ff0057" }}
-          >
-            Logout
-          </button>
+          <div className="flex space-x-4">
+            <button
+              onClick={() =>
+                (window.location.href = "mailto:support@nebula.com")
+              }
+              className="px-6 py-2 rounded-lg bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 hover:opacity-90 transition"
+            >
+              Contact Us
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </nav>
 
       {/* Gradient Bar */}
-      <div
-        className="w-full h-6"
-        style={{
-          background:
-            "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-        }}
-      ></div>
+      <div className="h-3 bg-gradient-to-r from-red-700 via-orange-600 to-yellow-500"></div>
 
       {/* Main Content */}
       <div className="flex-grow flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-3xl">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-3xl">
           {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">
+          <div className="text-center mb-6">
+            <h2 className="text-3xl font-bold text-gray-800 mb-2">
               🎟️ Ticket Checker
-            </h1>
+            </h2>
             <div className="h-1 w-24 bg-blue-600 mx-auto rounded-full"></div>
-            <p className="text-gray-900 mt-2">Checker ID: {checkerId}</p>
           </div>
 
-          {/* Scanner Status and Controls */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between bg-gray-400 p-4 rounded-lg">
-              <span className="text-gray-800 font-semibold">
-                Scanner Status:
-              </span>
+          {/* Status Bar */}
+          <div className="mb-6 bg-gray-300 p-4 rounded-lg">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">Status:</span>
               <div className="flex items-center space-x-3">
                 <span
-                  className={`px-4 py-1 rounded-full text-sm font-bold ${
-                    scanStatus === "scanning"
+                  className={`px-3 py-1 rounded-full text-sm font-bold ${
+                    scanState.status === "scanning"
                       ? "bg-green-500 text-white"
-                      : scanStatus === "validating"
+                      : scanState.status === "validating"
                         ? "bg-yellow-500 text-white"
-                        : scanStatus === "success"
+                        : scanState.status === "success"
                           ? "bg-green-600 text-white"
-                          : scanStatus === "error"
+                          : scanState.status === "error"
                             ? "bg-red-500 text-white"
                             : "bg-gray-500 text-white"
                   }`}
                 >
-                  {scanStatus === "scanning"
+                  {scanState.status === "scanning"
                     ? "🟢 SCANNING"
-                    : scanStatus === "validating"
+                    : scanState.status === "validating"
                       ? "🟡 VALIDATING"
-                      : scanStatus === "success"
+                      : scanState.status === "success"
                         ? "✅ SUCCESS"
-                        : scanStatus === "error"
+                        : scanState.status === "error"
                           ? "❌ ERROR"
                           : "⚪ READY"}
                 </span>
 
-                {/* Stop Scan Button - Only visible when scanning */}
-                {isScanning && (
+                {scanState.status === "scanning" && (
                   <button
                     onClick={stopScanner}
-                    className="bg-red-500 hover:bg-red-600 text-white px-4 py-1 rounded-lg text-sm font-medium transition"
+                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm transition"
                   >
-                    ⏹️ Stop Scan
+                    Stop
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* QR Reader Container - Always visible when scanning */}
+          {/* QR Scanner Container */}
           <div
             id={readerId}
-            className={`bg-black rounded-xl overflow-hidden border-4 border-gray-300 transition-all duration-300 mx-auto ${
-              isScanning ? "block" : "hidden"
-            }`}
-            style={{
-              minHeight: "400px", // Increased height to show all buttons
-              maxWidth: "500px",
-              margin: "0 auto",
-            }}
-          ></div>
+            className="w-full bg-gray-100 rounded-lg overflow-hidden"
+          />
 
-          {/* Loading state */}
+          {/* Scanner Not Ready */}
           {!isScannerReady && (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto"></div>
@@ -318,14 +237,12 @@ export default function CheckerPage() {
             </div>
           )}
 
-          {/* Start Button - Only show when not scanning and no result */}
-          {!isScanning && scanStatus === "idle" && isScannerReady && (
-            <div className="text-center py-12 ">
+          {/* Start Button */}
+          {scanState.status === "idle" && isScannerReady && (
+            <div className="text-center py-12">
               <button
                 onClick={startScanner}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 
-                         text-white font-bold py-4 px-8 rounded-xl text-xl 
-                         transform transition hover:scale-105 shadow-lg"
+                className="bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold py-4 px-8 rounded-xl text-xl transform transition hover:scale-105 shadow-lg"
               >
                 📷 START SCANNING
               </button>
@@ -336,90 +253,76 @@ export default function CheckerPage() {
           )}
 
           {/* Validating State */}
-          {scanStatus === "validating" && (
+          {scanState.status === "validating" && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-500 border-t-transparent mx-auto"></div>
               <p className="mt-4 text-xl text-gray-600">Validating ticket...</p>
             </div>
           )}
 
-          {/* SUCCESS STATE */}
-          {scanStatus === "success" && scanResult && (
+          {/* Success State */}
+          {scanState.status === "success" && scanState.result && (
             <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-6 text-white text-center">
-              <h2 className="text-2xl font-bold mb-3">VALID TICKET!</h2>
-
+              <h3 className="text-2xl font-bold mb-4">✅ VALID TICKET!</h3>
               <div className="bg-white bg-opacity-20 rounded-xl p-4 mb-4 text-left">
-                <div className="grid gap-2">
+                <div className="space-y-3">
                   <div className="flex items-center">
-                    <span className="text-xl mr-2">🎫</span>
+                    <span className="text-2xl mr-3">🎫</span>
                     <div>
-                      <p className="text-black text-xs opacity-90">
+                      <p className="text-black text-sm opacity-90">
                         Ticket Number
                       </p>
                       <p className="text-black font-bold">
-                        {scanResult.ticketNumber || "N/A"}
+                        {scanState.result.ticketNumber || "N/A"}
                       </p>
                     </div>
                   </div>
-
                   <div className="flex items-center">
-                    <span className="text-xl mr-2">📋</span>
+                    <span className="text-2xl mr-3">📋</span>
                     <div>
-                      <p className="text-black text-xs opacity-90">Event</p>
+                      <p className="text-black text-sm opacity-90">Event</p>
                       <p className="text-black font-bold">
-                        {scanResult.eventName || "Event"}
+                        {scanState.result.eventName || "Event"}
                       </p>
                     </div>
                   </div>
-
                   <div className="flex items-center">
-                    <span className="text-xl mr-2">👤</span>
+                    <span className="text-2xl mr-3">👤</span>
                     <div>
-                      <p className="text-black text-xs opacity-90">Attendee</p>
+                      <p className="text-black text-sm opacity-90">Attendee</p>
                       <p className="text-black font-bold">
-                        {scanResult.attendeeName ||
-                          scanResult.userName ||
-                          "Guest"}
+                        {scanState.result.attendeeName || "Guest"}
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <p className="text-lg mb-4">
-                {getMessageText(scanResult.message)}
-              </p>
-
               <button
-                onClick={handleScanAgain}
-                className="bg-white text-green-600 font-bold py-2 px-6 rounded-lg text-lg
-                         hover:bg-green-50 transition transform hover:scale-105 shadow"
+                onClick={startScanner}
+                className="bg-white text-green-600 font-bold py-3 px-6 rounded-lg hover:bg-green-50 transition transform hover:scale-105"
               >
                 Scan Next Ticket →
               </button>
             </div>
           )}
 
-          {/* ERROR STATE */}
-          {scanStatus === "error" && scanResult && (
+          {/* Error State */}
+          {scanState.status === "error" && (
             <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-2xl p-6 text-white text-center">
-              <div className="text-6xl mb-3">❌</div>
-              <h2 className="text-2xl font-bold mb-4">
-                {getMessageText(scanResult.message)}
-              </h2>
-
+              <div className="text-6xl mb-4">❌</div>
+              <h3 className="text-2xl font-bold mb-4">
+                {getMessageText(scanState.message)}
+              </h3>
               <div className="bg-white bg-opacity-20 rounded-xl p-3 mb-4">
-                <p className="text-white">
-                  {isAlreadyUsed(scanResult.message)
+                <p className="text-sm">
+                  {scanState.message.toLowerCase().includes("already used")
                     ? "This ticket has already been scanned!"
                     : "Please check the QR code and try again."}
                 </p>
               </div>
-
               <button
-                onClick={handleScanAgain}
-                className="bg-white text-red-600 font-bold py-2 px-6 rounded-lg text-lg
-                         hover:bg-red-50 transition transform hover:scale-105 shadow"
+                onClick={startScanner}
+                className="bg-white text-red-600 font-bold py-3 px-6 rounded-lg hover:bg-red-50 transition transform hover:scale-105"
               >
                 Try Again →
               </button>
@@ -427,35 +330,31 @@ export default function CheckerPage() {
           )}
 
           {/* Quick Stats */}
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="bg-blue-300 p-3 rounded-xl text-center">
-              <span className="block text-2xl font-bold text-blue-600">
+          <div className="mt-6 grid grid-cols-2 gap-4">
+            <div className="bg-blue-300 p-4 rounded-xl text-center">
+              <span className="block text-3xl font-bold text-blue-800">
                 {stats.today}
               </span>
-              <span className="text-xs text-gray-700">Scanned Today</span>
+              <span className="text-sm text-gray-800">Scanned Today</span>
             </div>
-            <div className="bg-purple-300 p-3 rounded-xl text-center">
-              <span className="block text-2xl font-bold text-purple-600">
+            <div className="bg-purple-300 p-4 rounded-xl text-center">
+              <span className="block text-3xl font-bold text-purple-800">
                 {stats.venue}
               </span>
-              <span className="text-xs text-gray-700">Venue Capacity</span>
+              <span className="text-sm text-gray-800">Venue Capacity</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="w-full mt-auto">
-        <div
-          className="w-full h-6"
-          style={{
-            background:
-              "linear-gradient(90deg, #ff0057 0%, #ff7a00 50%, #ffd000 100%)",
-          }}
-        />
-        <footer className="bg-black text-white w-full py-3 text-center">
-          <p className="text-sm">© 2026 Nebula. All rights reserved.</p>
-          <p className="text-xs opacity-75">Discover Your Next Experience</p>
+      <div className="mt-auto">
+        <div className="h-3 bg-gradient-to-r from-red-700 via-orange-600 to-yellow-500"></div>
+        <footer className="bg-black text-white py-6 text-center">
+          <p className="text-gray-400">© 2026 Nebula. All rights reserved.</p>
+          <p className="text-gray-500 text-sm mt-2">
+            Nebula - Discover Your Next Experience
+          </p>
         </footer>
       </div>
     </div>

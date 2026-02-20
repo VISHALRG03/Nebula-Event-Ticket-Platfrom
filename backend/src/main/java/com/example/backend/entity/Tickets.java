@@ -1,5 +1,6 @@
 package com.example.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -11,6 +12,8 @@ public class Tickets {
     private Long id;
 
     @ManyToOne
+    @JoinColumn(name = "booking_id")
+    @JsonIgnoreProperties("tickets")
     private Bookings booking;
 
     @ManyToOne
